@@ -13,7 +13,7 @@ ifeq ($(UNAME), Darwin)
 endif
 
 all: wavefront.o help.o Template_PrakCG.o
-	$(CC) $(INCP) $(LIBP) $(LIBS) wavefront.o help.o Template_PrakCG.o -o $(EXECUTABLE)
+	$(CC) $(INCP) $(LIBP) wavefront.o help.o Template_PrakCG.o $(LIBS) -o $(EXECUTABLE)
 
 wavefront: wavefront.cpp
 	$(CC) $(CFLAGS) wavefront.cpp -o wavefront.o
