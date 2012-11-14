@@ -142,6 +142,7 @@ void SetCamera(void);
 
 void DisplayFunc (void);			// GL-Displayfunktion
 void Draw_Scene(void);				// Zeichnet die Szene im Weltkoordinatensystem
+void Process(void);					// Animationsfunktion
 
 /////////////////////////////////////////////////////////////////////////////////
 //	Globale Variablen und Instanzen
@@ -524,98 +525,310 @@ void DisplayFunc (void) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// ÜBUNG 2 - ACHSE /////////////////////////////////////////////////////////////////////////////////////////////////////
+// ÜBUNG 3 - Truck /////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	
+inline float* normieren (float v[3]) {
+  float l=(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+  if(l==0) return v;
+  l = 1.0f/sqrt(l);
+  v[0]*=l; v[1]*=l; v[2]*=l;
+  return v;
+}
+
 #define SLICES 20			// für Zylindermantel, Boden und Deckel
 #define STACKS 1			// für Zylindermantel
 #define LOOPS 1				// für Deckel
 
 void myCylinder(void) {
-	// Zeichnet einen Einheitszylinder ins WKS
-	// d = 1, h = 1, Unterteilung: RINGS, SLICES
+	// Zeichnet einen Einheitszylinder 
+	// d = 1, h = 1, RINGS, SLICES
 	// Lage: Basiskreis in X-Y-Ebene, Höhe entlang der +Z Achse
 
-	GLUquadricObj *q = gluNewQuadric();
-
-		// Mantelfläche
-		glColor3f(0.2, 0.2, 0.6);
-		gluCylinder(q,0.5, 0.5, 1, SLICES, STACKS);
-
-		// Boden ergänzen --> gluDisk(...)
-
-		// Deckel ergänzen --> gluDisk(...)
-
-	gluDeleteQuadric(q);
+	glPushMatrix();
+		GLUquadricObj *q = gluNewQuadric();
+			gluCylinder(q,0.5, 0.5, 1, SLICES, STACKS);
+			glPushMatrix();
+				glTranslatef(0,0,1);
+				gluDisk(q, 0, 0.5, SLICES, LOOPS);
+			glPopMatrix();
+			glPushMatrix();
+				glRotatef(180,0,1,0);
+				//gluQuadricOrientation(q, GLU_INSIDE);
+				gluDisk(q, 0, 0.5, SLICES, LOOPS);
+			glPopMatrix();
+		gluDeleteQuadric(q);
+	glPopMatrix();
 
 };
+
+void myBox(void) {
+	// zeichnet einen Einheitswürfel, Kantenlänge 1 Einheit, "kleinste Ecke" im Ursprung, 
+	// Ausdehnung entlang der X, Y und Z-Achse
+	glPushMatrix();
+		glTranslatef(0.5, 0.5, 0.5);
+		glutSolidCube(1);
+	glPopMatrix();
+};
+
+
+// Eigenschaften der Truck-Geometrie:
+float axis_width   = 7.0f;    // Breite der Achse
+float wheel_radius = 2.0f;     // Radius der Räder
+float front_axis   = 15.0f;    // Abstand vordere Achse zum Nullpunkt (auf Z)
+float rear_axis1   = 2.5f;     // Abstand hintere Achse zum Nullpunkt (auf Z)
+float rear_axis2   =-2.5f;     // Abstand hintere Achse zum Nullpunkt (auf Z)
+
+// Struktur für den Truck
+struct Truck {
+  float speed;    // Geschwindigkeit [m/s]
+  float steering; // Lenkeinschlag   [°]
+  float pos[3];   // Position        [m]
+  float rot[3];   // Rotation        [°]
+  float wheelrot; // Rollposition der Räder [°]
+  float tilt;	  // Kippwinkel
+  Truck() 
+  {
+    wheelrot=0;
+    speed=0; steering=0; 
+    pos[0]=pos[1]=pos[2]=0;
+    rot[0]=rot[1]=rot[2]=0;
+	tilt = 0;
+  }
+} myTruck;
 
 void myAxle(void) {
 	// Achse zeichnen 
 	// Lage auf der X-Achse, Mittelpunkt im Ursprung
 	// Länge 6 Einheiten, Durchmesser 0.5 in X, 1 in Y-Richtung
 	// Farbe (0.5, 0.5, 0.9);
-
-	// Transformationen einstellen
-
-
-	// myCylinder zeichnen
-	   glColor3f(0.5, 0.5, 0.9);
-	   myCylinder();
-
-	// Transformationen rückgängig machen
-
+	glPushMatrix();
+		glRotatef(90, 0, 1, 0);
+		glScalef(0.5,1,axis_width);
+		glTranslatef(0, 0, -0.5);	
+		glColor3f(0.5, 0.5, 0.9); 
+		myCylinder();
+	glPopMatrix();
 };
 
 void myWheel(void) {
 	// Zeichnet ein Rad 
 	// Durchmesser Rad = 4, Radkappe = 3
-	// Höhe Reifen = 2, Radkappe = 0.2 (Radkappe liegt von 1<=Z<=1.2);
+	// Höhe Rad = 2, Radkappe = 0.2 (Radkappe liegt von 1<=Z<=1.2);
 	// Farbe Rad = 30% Grau, Radkappe = Gelblich (0.8, 0.8, 0.2);
 	
-	// Transformationen einstellen + Reifen zeichnen
-
-	    glColor3f(0.3, 0.3, 0.3);
+	glPushMatrix();
+		glScalef(2*wheel_radius,2*wheel_radius,wheel_radius);
+		glColor3f(0.3, 0.3, 0.3);
 		myCylinder();
-
+	glPopMatrix();
 	
-	// Transformationen einstellen + Radkappe zeichnen	
+	glPushMatrix();
+		glTranslatef(0,0,2);
+		glScalef(3, 3, 0.1);
 		glColor3f(0.8, 0.8, 0.2);
 		myCylinder();
+	glPopMatrix();
+}
 
-	// Transformationen rückgängig machen
+void myFrontAxle (float wheelrot, float steering) {
+	// die Vorderachse
+ 
+	myAxle();
+
+	// rechtes Rad bei WKS: X = 3 anfügen 	
+	glPushMatrix();
+		glRotatef(90, 0, 1, 0);
+		glTranslatef(0,0,axis_width/2.0);
+		glRotatef(steering, 0,1,0);
+		glRotatef(wheelrot, 0,0,1);
+		myWheel();
+	glPopMatrix();
+
+	// linkes Rad bei WKS: X = 3 anfügen 	
+	glPushMatrix();
+		glRotatef(-90, 0, 1, 0);
+		glTranslatef(0,0,axis_width/2.0);
+		glRotatef(steering, 0,1,0);
+		glRotatef(wheelrot, 0,0,-1);
+		myWheel();
+	glPopMatrix();
+
+	
+}; 
+
+void myRearAxle(float wheelrot) {
+	// eine komplette Hinterachse
+
+	myAxle();
+
+	// rechtes Rad bei WKS: X = 3 anfügen 	
+	glPushMatrix();
+		glRotatef(90, 0, 1, 0);
+		glTranslatef(0,0,axis_width/2.0);
+		glRotatef(wheelrot, 0,0,1);
+		myWheel();
+	glPopMatrix();
+
+	// linkes Rad bei WKS: X = 3 anfügen 	
+	glPushMatrix();
+		glRotatef(-90, 0, 1, 0);
+		glTranslatef(0,0,axis_width/2.0);
+		glRotatef(wheelrot, 0,0,-1);
+		myWheel();
+	glPopMatrix();
+
+};
+
+void Draw_Truck(Truck myTruck) {
+
+	
+		// Fahrwerk mit Rahmen
+		{
+			glColor3f(0.8, 0.8, 0.5);
+			glPushMatrix();					    // Rahmen
+				glTranslatef(-axis_width/2.0 + 1, 0, -7);
+				glScalef(axis_width - 2, 2, 25);
+				myBox();
+			glPopMatrix();
+			
+			glPushMatrix();						 // Vorderachse
+				glTranslatef(0,0,front_axis);	
+				myFrontAxle(myTruck.wheelrot, myTruck.steering);
+			glPopMatrix();
+
+			glPushMatrix();						// Mittlere Achse
+				glTranslatef(0,0,rear_axis1);
+				myRearAxle(myTruck.wheelrot);
+			glPopMatrix();
+			
+			glPushMatrix();						// Hintere Achse
+				glTranslatef(0,0,rear_axis2);
+				myRearAxle(myTruck.wheelrot);
+			glPopMatrix();
+		}
+
+		/////////////////////////////////////////////////////////////////////////////////
+		// TODO: Hier die Fahrzeugaufbauten durch Aufruf der Funktion myBox() ergänzen //
+		/////////////////////////////////////////////////////////////////////////////////
+
+		
 
 }
 
+void Draw_Ground(void) {  
+	// Zeichnet den Boden bei Y=0
+
+	GLUquadricObj *q = gluNewQuadric();
+		glColor3f(0.2, 0.2, 0.3);
+
+		glPushMatrix();
+			glRotatef(90,1,0,0);
+			gluDisk(q, 0, 300, 100, 50);
+		glPopMatrix();
+
+	gluDeleteQuadric(q);
+
+};
+
+
 void Draw_Scene (void) {
-  
-	// Testen der Funktionen 
-	myCylinder();
+	// Zeichnet die komplette Szene mit Boden und Truck
+
+	Process();
+
+	Draw_Ground();						// der Boden
+
+	glTranslatef(0, wheel_radius, 0);	// den Truck "auf die Straße stellen"
+	
+
+	// TODO: Den Truck laut seinen Animationsparametern positionieren und ausrichten
+	// myTruck.pos[], myTruck.rot[];
+	Draw_Truck(myTruck);				
+
+}
 
 
-	// Animationsparameter berechnen
-	static float wheelrot = 0;
-	wheelrot += 0.5; 
-	if (wheelrot > 360.0) wheelrot = 0;
 
-	static float steering = 0.0;
-	// Berechnung des Lenkeinschlags
+void Process(void)
+	// Berechnung der Animationsparameter aus alten Parametern und der Reaktion auf Eingaben
+{
+#pragma region PROCESS_INPUT
+  // -------------------------------  INPUT  --------------------------------------------
+  // Input-Verarbeitung: (5/2/1/3-Steuerung, 9,6 für den Kipper)
+
+  // Geschwindigkeit: Tasten 5 und 2
+  myTruck.speed *= 0.995f;								// Reibung
+  if(globKeys.KeyState('5'))  myTruck.speed += 0.25f;	// Beschleunigen
+  if(globKeys.KeyState('2'))  myTruck.speed -= 0.25f;	// Bremsen
+  if(globKeys.KeyState(' '))  myTruck.speed *= 0.9f;	// Handbremse
+ 
+  // Lenkeinschlag: Tasten 1 und 3
+  if(fabs(myTruck.speed)>0.1f)                           // Lenkrückstellung sollte abhängig von
+    myTruck.steering *= 0.95f;                           // der (absoluten) Geschwindigkeit sein
+  if(globKeys.KeyState('1'))     myTruck.steering += 2.0f;  // Links lenken
+  if(globKeys.KeyState('3'))     myTruck.steering -= 2.0f;  // Rechts lenken
+
+  // TODO Kippen: Tasten 6 und 9
+  // 
+  // if (???) myTruck.tilt = ????
 
 
-	// Achse komplett zeichnen:
+  // Begrenzungen der Animationsparameter:
+  if(myTruck.speed> 30.0f)       myTruck.speed= 30.0f;   // Maximal 30m/s vorwärts
+  if(myTruck.speed< -5.0f)       myTruck.speed= -5.0f;   // Maximal 5m/s rückwärts
+  if(myTruck.steering> 30.0f)    myTruck.steering= 30.0f;   // Maximal 65° Lenkeinschlag
+  if(myTruck.steering<-30.0f)    myTruck.steering=-30.0f;   // Maximal -65° Lenkeinschlag
+  // TODO Begrenzung des Kippers
+  // if (myTruck.tilt ???) ...
 
-	// Achse platzieren und zeichnen
+#pragma endregion
+#pragma region PROCESS_TRUCK
+  // -------------------------------  TRUCK bewegen --------------------------------------------
+  // Geschwindigkeit in m/frame, berechnet aus speed in m/s
+  float speed_perframe = myTruck.speed/60.0f;
 
-	   // myAxle();
-
-	// rechtes Rad platzieren, drehen und zeichnen
-
-	 // myWheel();
-
-
-	// linkes Rad platzieren, drehen und zeichnen
-
-	 // myWheel();
+  // TODO: Berechnung des Drehwinkels für die Räder: myTruck.wheelrot
+  // Wie weit haben sich die Räder weitergedreht?
+  // Die Geschwindigkeit beträgt speed_perframe in m/frame, der Radius der Räder ist wheel_radius
+  // mytruck.wheelrot = .... ???
 
 
-}; // Draw_Scene()
+  // Truck-Position und Rotation neu berechnen: Rotation ist nur um die Y-Achse interessant
+  float alpha     = (myTruck.rot[1]+myTruck.steering)*M_PI/180.0f;
+  float alpha_old =  myTruck.rot[1]                  *M_PI/180.0f;
+  float vec[3]     = {sin(alpha),    0,cos(alpha)};     // neuer Bewegungsvektor der Vorderachse
+  float vec_old[3] = {sin(alpha_old),0,cos(alpha_old)}; // alter Richtungsvektor
+ 
+  float front_point_old[3] = {vec_old[0]*front_axis,    // Mittelpunkt der Vorderachse
+                              vec_old[1]*front_axis,
+                              vec_old[2]*front_axis};
+  float front_point_new[3] = {front_point_old[0]+speed_perframe*vec[0], // neuer Mittelpunkt der Vorderachse
+                              front_point_old[1]+speed_perframe*vec[1],
+                              front_point_old[2]+speed_perframe*vec[2]};
+
+  // Nun Mittelpunkt der Hinterachse (hier (0,0,0)!) neu berechnen. 
+  // Dieser entspricht dann der gesuchten Fahrzeugbewegung.
+  // Er liegt auf dem Vektor V, der vom alten Mittelpunkt(0,0,0) zum neuen Vorderachsenpunkt zeigt
+
+  float V[3] = {front_point_new[0],
+                front_point_new[1],
+                front_point_new[2]};
+  normieren(V);
+
+  float pos[3] = {front_point_new[0]-V[0]*front_axis,
+                  front_point_new[1]-V[1]*front_axis,
+                  front_point_new[2]-V[2]*front_axis};
+
+  float alpha_new = asin(V[0])*180.0f/M_PI; 
+  if(V[2]<0) alpha_new = 180.0f-alpha_new;
+
+  while(alpha_new>360.0f) alpha_new-=360.0f;
+  while(alpha_new<0.0f)   alpha_new+=360.0f;
+  myTruck.rot[1]=alpha_new;
+
+  myTruck.pos[0] += pos[0];
+  myTruck.pos[1] += pos[1];
+  myTruck.pos[2] += pos[2];
+#pragma endregion
+}
